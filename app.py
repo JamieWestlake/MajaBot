@@ -12,6 +12,11 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 st.set_page_config(page_title="Bridge Chatbot", layout="wide")
 st.title("💬 Chat with Maja Bridge System")
 
+# 🔁 Auto-reload after index build
+if st.session_state.get("index_built"):
+    st.session_state.index_built = False
+    st.experimental_rerun()
+
 # ✅ Define path to persist FAISS index
 INDEX_PATH = "data/faiss_index"
 
@@ -49,8 +54,8 @@ if not vector_store:
     if st.button("🚀 Build FAISS Index"):
         with st.spinner("Building index from PDF using local model..."):
             vector_store = build_index()
-        st.success("Index built! Please reload the app.")
-        st.experimental_rerun()
+        st.success("Index built! Reloading now...")
+        st.session_state.index_built = True
         st.stop()
 else:
     retriever = vector_store.as_retriever(search_kwargs={"k": 4})
