@@ -26,26 +26,7 @@ class TfidfEmbedding(Embeddings):
     def __call__(self, text):
         return self.embed_query(text)
 
-# Load paths
-INDEX_PATH = "data/faiss_index"
-VECTORIZER_PATH = os.path.join(INDEX_PATH, "vectorizer.pkl")
-
-@st.cache_resource
-def load_vector_store():
-    if not os.path.exists(INDEX_PATH) or not os.path.exists(VECTORIZER_PATH):
-        return None, None
-    vectorizer = joblib.load(VECTORIZER_PATH)
-    embedding = TfidfEmbedding(vectorizer)
-    vector_store = FAISS.load_local(INDEX_PATH, embedding, allow_dangerous_deserialization=True)
-    return vector_store, embedding
-
-vector_store, embeddings = load_vector_store()
-
-if not vector_store:
-    st.error("❌ FAISS index not found. Please upload all 3 files to `data/faiss_index/`.")
-    st.stop()
-
-# Dummy document combiner (simple string join)
+# Dummy combiner with patched input handling
 class DummyCombineDocumentsChain(BaseCombineDocumentsChain):
     def combine_docs(self, docs, **kwargs):
         return {"output_text": "\n\n".join(doc.page_content for doc in docs)}
@@ -61,7 +42,30 @@ class DummyCombineDocumentsChain(BaseCombineDocumentsChain):
     def output_keys(self):
         return ["output_text"]
 
-# Create QA chain
+    def __call__(self, inputs, **kwargs):
+        documents = inputs.get("documents")
+        return self.combine_docs(documents, **kwargs)
+
+# Paths
+INDEX_PATH = "data/faiss_index"
+VECTORIZER_PATH = os.path.join(INDEX_PATH, "vectorizer.pkl")
+
+# Load vector store
+@st.cache_resource
+def load_vector_store():
+    if not os.path.exists(INDEX_PATH) or not os.path.exists(VECTORIZER_PATH):
+        return None, None
+    vectorizer = joblib.load(VECTORIZER_PATH)
+    embedding = TfidfEmbedding(vectorizer)
+    vector_store = FAISS.load_local(INDEX_PATH, embedding, allow_dangerous_deserialization=True)
+    return vector_store, embedding
+
+vector_store, embeddings = load_vector_store()
+
+if not vector_store:
+    st.error("❌ FAISS index not found. Please upload all 3 files to `data/faiss_index/`.")
+    st.stop()
+
 retriever = vector_store.as_retriever(search_kwargs={"k": 4})
 qa = RetrievalQAWithSourcesChain(
     combine_documents_chain=DummyCombineDocumentsChain(),
