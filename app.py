@@ -14,7 +14,7 @@ import io
 st.set_page_config(page_title="Bridge Chatbot", layout="wide")
 st.title("💬 Chat with Maja Bridge System")
 
-# ✅ Free TF-IDF embedding
+# ✅ Free TF-IDF embedding class (with __call__)
 class TfidfEmbedding:
     def __init__(self):
         self.vectorizer = TfidfVectorizer()
@@ -28,6 +28,9 @@ class TfidfEmbedding:
 
     def embed_query(self, text):
         return self.vectorizer.transform([text]).toarray()[0]
+
+    def __call__(self, text):
+        return self.embed_query(text)
 
 INDEX_PATH = "data/faiss_index"
 
@@ -86,7 +89,7 @@ if not vector_store:
 else:
     retriever = vector_store.as_retriever(search_kwargs={"k": 4})
 
-    # ✅ Minimal dummy chain to bypass LLM
+    # ✅ Minimal dummy chain to combine retrieved chunks
     class DummyCombineDocumentsChain(BaseCombineDocumentsChain):
         def combine_docs(self, docs, **kwargs):
             return {"output_text": "\n\n".join(doc.page_content for doc in docs)}
