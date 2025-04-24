@@ -13,7 +13,7 @@ import numpy as np
 st.set_page_config(page_title="Bridge Chatbot", layout="wide")
 st.title("💬 Chat with Maja Bridge System")
 
-# TF-IDF wrapper for LangChain
+# ✅ TF-IDF wrapper for LangChain-compatible embedding
 class TfidfEmbedding:
     def __init__(self):
         self.vectorizer = TfidfVectorizer()
@@ -30,11 +30,12 @@ class TfidfEmbedding:
 
 INDEX_PATH = "data/faiss_index"
 
-# Load and chunk PDF
+# ✅ Load and chunk the PDF
 def load_pdf(path):
     reader = PdfReader(path)
     return [Document(page_content=page.extract_text()) for page in reader.pages]
 
+# ✅ Build FAISS index from PDF + TF-IDF
 def build_index():
     docs = load_pdf("data/Maja Bridgesysteem.pdf")
     splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=100)
@@ -42,13 +43,13 @@ def build_index():
 
     texts = [doc.page_content for doc in chunks]
     metadatas = [doc.metadata for doc in chunks]
-    embeddings = TfidfEmbedding()
 
-    embedded = embeddings.embed_documents(texts)
-    faiss_index = FAISS.from_embeddings(embedded.tolist(), texts, metadatas)
+    embeddings = TfidfEmbedding()
+    faiss_index = FAISS.from_texts(texts, embeddings, metadatas=metadatas)
     faiss_index.save_local(INDEX_PATH)
     return faiss_index, embeddings
 
+# ✅ Load or fallback to build
 @st.cache_resource
 def load_vector_store():
     if not os.path.exists(INDEX_PATH):
@@ -56,7 +57,7 @@ def load_vector_store():
     embeddings = TfidfEmbedding()
     return FAISS.load_local(INDEX_PATH, embeddings), embeddings
 
-# Main app logic
+# ✅ Main app logic
 vector_store, embeddings = load_vector_store()
 
 if not vector_store:
