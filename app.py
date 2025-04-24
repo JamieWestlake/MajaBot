@@ -14,7 +14,7 @@ import io
 st.set_page_config(page_title="Bridge Chatbot", layout="wide")
 st.title("💬 Chat with Maja Bridge System")
 
-# ✅ Free TF-IDF embedding class (with __call__)
+# TF-IDF embedding class with __call__
 class TfidfEmbedding:
     def __init__(self):
         self.vectorizer = TfidfVectorizer()
@@ -34,7 +34,7 @@ class TfidfEmbedding:
 
 INDEX_PATH = "data/faiss_index"
 
-# ✅ Load and chunk PDF
+# Load and chunk the PDF
 def load_pdf(path):
     reader = PdfReader(path)
     return [Document(page_content=page.extract_text()) for page in reader.pages]
@@ -55,10 +55,11 @@ def load_vector_store():
     if not os.path.exists(INDEX_PATH):
         return None, None
     embeddings = TfidfEmbedding()
-    # 🔧 Force fit on dummy content to ensure it's ready
-    embeddings.embed_documents(["dummy to initialize vectorizer"])
+    # 👇 Dummy multi-string init to match FAISS index dimensionality
+    embeddings.embed_documents([
+        "dummy one", "dummy two", "dummy three", "dummy four", "dummy five"
+    ])
     return FAISS.load_local(INDEX_PATH, embeddings, allow_dangerous_deserialization=True), embeddings
-
 
 vector_store, embeddings = load_vector_store()
 
@@ -92,7 +93,6 @@ if not vector_store:
 else:
     retriever = vector_store.as_retriever(search_kwargs={"k": 4})
 
-    # ✅ Minimal dummy chain to combine retrieved chunks
     class DummyCombineDocumentsChain(BaseCombineDocumentsChain):
         def combine_docs(self, docs, **kwargs):
             return {"output_text": "\n\n".join(doc.page_content for doc in docs)}
@@ -115,11 +115,14 @@ else:
 
     query = st.text_input("Ask me something about the Maja Bridge System:")
     if query:
-        result = qa.invoke({"question": query})
-        st.markdown("**Answer:**")
-        st.write(result["answer"] or "No relevant answer found.")
+        try:
+            result = qa.invoke({"question": query})
+            st.markdown("**Answer:**")
+            st.write(result["answer"] or "No relevant answer found.")
 
-        if result.get("sources"):
-            st.markdown("---")
-            st.markdown("**Sources:**")
-            st.write(result["sources"])
+            if result.get("sources"):
+                st.markdown("---")
+                st.markdown("**Sources:**")
+                st.write(result["sources"])
+        except Exception as e:
+            st.error(f"💥 An error occurred: {e}")
