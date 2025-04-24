@@ -1,47 +1,45 @@
 import streamlit as st
 import os
 import time
-import asyncio
 from PyPDF2 import PdfReader
 from langchain.docstore.document import Document
 from langchain.vectorstores import FAISS
 from langchain.chains import RetrievalQA
 from langchain.chat_models import ChatOpenAI
-from langchain.embeddings import HuggingFaceEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
+from sentence_transformers import SentenceTransformer
 
-os.environ["STREAMLIT_ENV"] = "production"
+# ✅ Custom local embedding wrapper (avoids HuggingFaceEmbedding crash)
+class LocalEmbedding:
+    def __init__(self, model_name="sentence-transformers/all-MiniLM-L6-v2"):
+        self.model = SentenceTransformer(model_name)
 
-# 🔧 Fix PyTorch async loop error on reload
-asyncio.set_event_loop(asyncio.new_event_loop())
+    def embed_documents(self, texts):
+        return self.model.encode(texts, show_progress_bar=True).tolist()
+
+    def embed_query(self, text):
+        return self.model.encode(text, show_progress_bar=False).tolist()
 
 st.set_page_config(page_title="Bridge Chatbot", layout="wide")
 st.title("💬 Chat with Maja Bridge System")
 
-# 🔁 Auto-reload after index build
+# 🔁 Rerun after FAISS build
 if st.session_state.get("index_built"):
     st.session_state.index_built = False
     st.experimental_rerun()
 
-# ✅ Define path to persist FAISS index
 INDEX_PATH = "data/faiss_index"
 
-# ✅ Load PDF and convert to LangChain Documents
 def load_pdf(path):
     reader = PdfReader(path)
     return [Document(page_content=page.extract_text()) for page in reader.pages]
 
-# ✅ Build FAISS Index with local embeddings (safe device setting)
 def build_index():
     docs = load_pdf("data/Maja Bridgesysteem.pdf")
     splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=100)
     chunks = splitter.split_documents(docs)
 
-    embeddings = HuggingFaceEmbeddings(
-        model_name="sentence-transformers/all-MiniLM-L6-v2",
-        model_kwargs={"device": "cpu"}
-    )
-
+    embeddings = LocalEmbedding()
     texts = [doc.page_content for doc in chunks]
     metadatas = [doc.metadata for doc in chunks]
 
@@ -49,18 +47,11 @@ def build_index():
     vectorstore.save_local(INDEX_PATH)
     return vectorstore
 
-# ✅ Load or fallback to index build prompt (model loaded inside call)
 @st.cache_resource
 def load_vector_store():
     if not os.path.exists(INDEX_PATH):
         return None
-    return FAISS.load_local(
-        INDEX_PATH,
-        HuggingFaceEmbeddings(
-            model_name="sentence-transformers/all-MiniLM-L6-v2",
-            model_kwargs={"device": "cpu"}
-        )
-    )
+    return FAISS.load_local(INDEX_PATH, LocalEmbedding())
 
 vector_store = load_vector_store()
 
