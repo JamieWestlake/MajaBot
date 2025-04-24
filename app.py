@@ -25,12 +25,15 @@ def load_pdf(path):
     reader = PdfReader(path)
     return [Document(page_content=page.extract_text()) for page in reader.pages]
 
-# ✅ Build FAISS Index with local embeddings
+# ✅ Build FAISS Index with local embeddings (safe device setting)
 def build_index():
     docs = load_pdf("data/Maja Bridgesysteem.pdf")
     splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=100)
     chunks = splitter.split_documents(docs)
-    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+    embeddings = HuggingFaceEmbeddings(
+        model_name="sentence-transformers/all-MiniLM-L6-v2",
+        model_kwargs={"device": "cpu"}
+    )
 
     texts = [doc.page_content for doc in chunks]
     metadatas = [doc.metadata for doc in chunks]
@@ -44,7 +47,10 @@ def build_index():
 def load_vector_store():
     if not os.path.exists(INDEX_PATH):
         return None
-    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+    embeddings = HuggingFaceEmbeddings(
+        model_name="sentence-transformers/all-MiniLM-L6-v2",
+        model_kwargs={"device": "cpu"}
+    )
     return FAISS.load_local(INDEX_PATH, embeddings)
 
 vector_store = load_vector_store()
