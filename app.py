@@ -12,7 +12,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 st.set_page_config(page_title="Bridge Chatbot", layout="wide")
 st.title("💬 Chat with Maja Bridge System")
 
-# TF-IDF embedding class that inherits from LangChain Embeddings
+# TF-IDF embedding class
 class TfidfEmbedding(Embeddings):
     def __init__(self, vectorizer):
         self.vectorizer = vectorizer
@@ -26,7 +26,7 @@ class TfidfEmbedding(Embeddings):
     def __call__(self, text):
         return self.embed_query(text)
 
-# Dummy combiner with safe fallback for empty/no docs
+# Combiner with safe fallback
 class DummyCombineDocumentsChain(BaseCombineDocumentsChain):
     def combine_docs(self, docs, **kwargs):
         if not docs:
@@ -54,7 +54,7 @@ class DummyCombineDocumentsChain(BaseCombineDocumentsChain):
 INDEX_PATH = "data/faiss_index"
 VECTORIZER_PATH = os.path.join(INDEX_PATH, "vectorizer.pkl")
 
-# Load vector store
+# Load FAISS vector store
 @st.cache_resource
 def load_vector_store():
     if not os.path.exists(INDEX_PATH) or not os.path.exists(VECTORIZER_PATH):
@@ -90,3 +90,20 @@ if query:
     except Exception as e:
         st.error("💥 Something went wrong:")
         st.code(traceback.format_exc())
+
+# 🔍 Test the raw index (debug helper)
+with st.expander("🧪 Debug: Test FAISS index directly"):
+    if st.button("Run test query"):
+        test_query = "opening bid with 5-card major"
+        try:
+            docs = vector_store.similarity_search(test_query, k=3)
+            st.markdown("**Top Matches:**")
+            if docs:
+                for i, doc in enumerate(docs):
+                    st.markdown(f"**Match {i+1}:**")
+                    st.write(doc.page_content[:300])
+            else:
+                st.warning("⚠️ No matches found for this query.")
+        except Exception as e:
+            st.error("❌ FAISS query failed.")
+            st.code(traceback.format_exc())
