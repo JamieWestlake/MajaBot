@@ -4,7 +4,7 @@ from langchain.vectorstores import FAISS
 from langchain.chains import RetrievalQA
 from langchain.chat_models import ChatOpenAI
 from langchain.embeddings import OpenAIEmbeddings
-from langchain.document_loaders import PyPDFLoader
+from langchain.document_loaders import PyPDF2Loader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 st.set_page_config(page_title="Bridge Chatbot", layout="wide")
@@ -17,7 +17,7 @@ if not api_key:
 
 # Function to build the FAISS index from the PDF
 def build_index():
-    loader = PyPDFLoader("data/Maja Bridgesysteem.pdf")
+    loader = PyPDF2Loader("data/Maja Bridgesysteem.pdf")
     docs = loader.load()
     splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=100)
     chunks = splitter.split_documents(docs)
