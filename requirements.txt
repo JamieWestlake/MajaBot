@@ -4,4 +4,4 @@ faiss-cpu
 PyPDF2
 streamlit
 tiktoken
-langchain-community
+langchain-community==0.0.7
