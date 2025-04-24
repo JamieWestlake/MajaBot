@@ -1,26 +1,83 @@
 import streamlit as st
 import os
-import zipfile
+import joblib
+import traceback
+from langchain_community.vectorstores import FAISS
+from langchain.chains import RetrievalQAWithSourcesChain
+from langchain.chains.combine_documents.base import BaseCombineDocumentsChain
+from sklearn.feature_extraction.text import TfidfVectorizer
 
-st.set_page_config(page_title="Download FAISS Files", layout="wide")
-st.title("📦 Download FAISS Index Bundle")
+# Basic UI setup
+st.set_page_config(page_title="Bridge Chatbot", layout="wide")
+st.title("💬 Chat with Maja Bridge System")
 
-ZIP_PATH = "data/faiss_index_bundle.zip"
+# Custom embedding class that wraps TfidfVectorizer
+class TfidfEmbedding:
+    def __init__(self, vectorizer):
+        self.vectorizer = vectorizer
+
+    def embed_documents(self, texts):
+        return self.vectorizer.transform(texts).toarray()
+
+    def embed_query(self, text):
+        return self.vectorizer.transform([text]).toarray()[0]
+
+    def __call__(self, text):
+        return self.embed_query(text)
+
+# Where the saved files live
 INDEX_PATH = "data/faiss_index"
+VECTORIZER_PATH = os.path.join(INDEX_PATH, "vectorizer.pkl")
 
-# Re-zip the index folder if needed
-if os.path.exists(INDEX_PATH):
-    with zipfile.ZipFile(ZIP_PATH, "w", zipfile.ZIP_DEFLATED) as zipf:
-        for filename in os.listdir(INDEX_PATH):
-            file_path = os.path.join(INDEX_PATH, filename)
-            zipf.write(file_path, arcname=filename)
+@st.cache_resource
+def load_vector_store():
+    if not os.path.exists(INDEX_PATH) or not os.path.exists(VECTORIZER_PATH):
+        return None, None
+    vectorizer = joblib.load(VECTORIZER_PATH)
+    embedding = TfidfEmbedding(vectorizer)
+    vector_store = FAISS.load_local(INDEX_PATH, embedding, allow_dangerous_deserialization=True)
+    return vector_store, embedding
 
-    with open(ZIP_PATH, "rb") as f:
-        st.download_button(
-            label="⬇️ Download FAISS Index Bundle (ZIP)",
-            data=f,
-            file_name="faiss_index_bundle.zip",
-            mime="application/zip"
-        )
-else:
-    st.error("❌ FAISS index folder not found. Build it first.")
+vector_store, embeddings = load_vector_store()
+
+if not vector_store:
+    st.error("❌ FAISS index not found. Please upload index.faiss, index.pkl, and vectorizer.pkl to data/faiss_index.")
+    st.stop()
+
+# Use LangChain's RetrievalQA with a dummy output chain
+retriever = vector_store.as_retriever(search_kwargs={"k": 4})
+
+class DummyCombineDocumentsChain(BaseCombineDocumentsChain):
+    def combine_docs(self, docs, **kwargs):
+        return {"output_text": "\n\n".join(doc.page_content for doc in docs)}
+
+    async def acombine_docs(self, docs, **kwargs):
+        return {"output_text": "\n\n".join(doc.page_content for doc in docs)}
+
+    @property
+    def input_keys(self):
+        return ["documents"]
+
+    @property
+    def output_keys(self):
+        return ["output_text"]
+
+qa = RetrievalQAWithSourcesChain(
+    combine_documents_chain=DummyCombineDocumentsChain(),
+    retriever=retriever
+)
+
+# Chat interface
+query = st.text_input("Ask me something about the Maja Bridge System:")
+if query:
+    try:
+        result = qa.invoke({"question": query})
+        st.markdown("**Answer:**")
+        st.write(result["answer"] or "No relevant answer found.")
+        if result.get("sources"):
+            st.markdown("---")
+            st.markdown("**Sources:**")
+            st.write(result["sources"])
+    except Exception as e:
+        st.error("💥 Something went wrong:")
+        st.code(traceback.format_exc())
