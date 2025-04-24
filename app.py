@@ -4,8 +4,9 @@ from PyPDF2 import PdfReader
 from langchain.vectorstores import FAISS
 from langchain.docstore.document import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.chains import RetrievalQA
-from langchain.chat_models import ChatOpenAI
+from langchain.chains import RetrievalQAWithSourcesChain
+from langchain.prompts import PromptTemplate
+from langchain.chains.qa_with_sources.base import BaseCombineDocumentsChain
 from sklearn.feature_extraction.text import TfidfVectorizer
 import numpy as np
 import zipfile
@@ -14,7 +15,7 @@ import io
 st.set_page_config(page_title="Bridge Chatbot", layout="wide")
 st.title("💬 Chat with Maja Bridge System")
 
-# ✅ Local TF-IDF Embedding class (free + safe)
+# ✅ Free local embedding model
 class TfidfEmbedding:
     def __init__(self):
         self.vectorizer = TfidfVectorizer()
@@ -31,26 +32,25 @@ class TfidfEmbedding:
 
 INDEX_PATH = "data/faiss_index"
 
-# ✅ Load PDF and split into documents
+# ✅ Load PDF and split
 def load_pdf(path):
     reader = PdfReader(path)
     return [Document(page_content=page.extract_text()) for page in reader.pages]
 
-# ✅ Build new FAISS index using free TF-IDF
+# ✅ Build FAISS index
 def build_index():
     docs = load_pdf("data/Maja Bridgesysteem.pdf")
     splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=100)
     chunks = splitter.split_documents(docs)
-
     texts = [doc.page_content for doc in chunks]
     metadatas = [doc.metadata for doc in chunks]
-    embeddings = TfidfEmbedding()
 
+    embeddings = TfidfEmbedding()
     faiss_index = FAISS.from_texts(texts, embeddings, metadatas=metadatas)
     faiss_index.save_local(INDEX_PATH)
     return faiss_index, embeddings
 
-# ✅ Load vector store (allow pickle deserialization safely)
+# ✅ Load or fallback to rebuild
 @st.cache_resource
 def load_vector_store():
     if not os.path.exists(INDEX_PATH):
@@ -63,11 +63,11 @@ vector_store, embeddings = load_vector_store()
 if not vector_store:
     st.warning("⚠️ FAISS index not found. Click below to build it.")
     if st.button("🚀 Build FAISS Index"):
-        with st.spinner("Building index with free TF-IDF..."):
+        with st.spinner("Building FAISS index with TF-IDF..."):
             vector_store, embeddings = build_index()
         st.success("✅ Index built! Download it and upload to GitHub to make it permanent.")
 
-        # ✅ ZIP download button
+        # Download button
         def zip_faiss_index(folder_path):
             zip_buffer = io.BytesIO()
             with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
@@ -90,13 +90,24 @@ if not vector_store:
 
 else:
     retriever = vector_store.as_retriever(search_kwargs={"k": 4})
-    qa = RetrievalQA.from_chain_type(llm=ChatOpenAI(model_name="gpt-3.5-turbo", openai_api_key="sk-fake"), retriever=retriever)
+    
+    # Dummy combine chain so we can use the RetrievalQAWithSourcesChain wrapper
+    class DummyCombineDocumentsChain(BaseCombineDocumentsChain):
+        def _call(self, inputs, run_manager=None):
+            return {"output_text": "\n\n".join(doc.page_content for doc in inputs["documents"])}
+
+        @property
+        def input_keys(self):
+            return ["documents"]
+
+        @property
+        def output_keys(self):
+            return ["output_text"]
+
+    qa = RetrievalQAWithSourcesChain(combine_documents_chain=DummyCombineDocumentsChain(), retriever=retriever)
 
     query = st.text_input("Ask me something about the Maja Bridge System:")
     if query:
-        try:
-            result = qa.run(query)
-            st.markdown("**Answer:**")
-            st.write(result)
-        except Exception as e:
-            st.error("⚠️ Could not complete response. You're using a local index without OpenAI access.")
+        result = qa.run({"question": query})
+        st.markdown("**Top Matching Answer:**")
+        st.write(result["answer"] if result["answer"] else "No relevant answer found.")
