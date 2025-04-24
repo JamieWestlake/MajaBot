@@ -1,84 +1,59 @@
 import streamlit as st
 import os
+import zipfile
 import joblib
-import traceback
+import shutil
+import tempfile
+from PyPDF2 import PdfReader
+from langchain_core.documents import Document
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
-from langchain.chains import RetrievalQAWithSourcesChain
-from langchain.chains.combine_documents.base import BaseCombineDocumentsChain
-from langchain_core.embeddings import Embeddings
 from sklearn.feature_extraction.text import TfidfVectorizer
 
-# UI setup
-st.set_page_config(page_title="Bridge Chatbot", layout="wide")
-st.title("💬 Chat with Maja Bridge System")
+st.set_page_config(page_title="Build & Download FAISS Index", layout="wide")
+st.title("📚 Build FAISS Index from PDF (TF-IDF, no OpenAI)")
 
-# Custom TF-IDF embedding class (now inheriting from Embeddings!)
-class TfidfEmbedding(Embeddings):
-    def __init__(self, vectorizer):
-        self.vectorizer = vectorizer
+INDEX_DIR = "data/faiss_index"
+ZIP_OUTPUT = "faiss_index_bundle.zip"
+PDF_PATH = "data/Maja Bridgesysteem.pdf"
 
-    def embed_documents(self, texts):
-        return self.vectorizer.transform(texts).toarray()
-
-    def embed_query(self, text):
-        return self.vectorizer.transform([text]).toarray()[0]
-
-    def __call__(self, text):
-        return self.embed_query(text)
-
-# Load paths
-INDEX_PATH = "data/faiss_index"
-VECTORIZER_PATH = os.path.join(INDEX_PATH, "vectorizer.pkl")
-
-@st.cache_resource
-def load_vector_store():
-    if not os.path.exists(INDEX_PATH) or not os.path.exists(VECTORIZER_PATH):
-        return None, None
-    vectorizer = joblib.load(VECTORIZER_PATH)
-    embedding = TfidfEmbedding(vectorizer)
-    vector_store = FAISS.load_local(INDEX_PATH, embedding, allow_dangerous_deserialization=True)
-    return vector_store, embedding
-
-vector_store, embeddings = load_vector_store()
-
-if not vector_store:
-    st.error("❌ FAISS index not found. Please rebuild or upload the index.")
+if not os.path.exists(PDF_PATH):
+    st.error("❌ PDF not found at `data/Maja Bridgesysteem.pdf`")
     st.stop()
 
-# Use LangChain's RetrievalQA with a dummy output chain
-retriever = vector_store.as_retriever(search_kwargs={"k": 4})
+if st.button("🚀 Build and Export Index"):
+    with st.spinner("Reading and processing PDF..."):
+        reader = PdfReader(PDF_PATH)
+        docs = [Document(page_content=p.extract_text()) for p in reader.pages if p.extract_text()]
+        splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=100)
+        chunks = splitter.split_documents(docs)
+        texts = [doc.page_content for doc in chunks]
 
-class DummyCombineDocumentsChain(BaseCombineDocumentsChain):
-    def combine_docs(self, docs, **kwargs):
-        return {"output_text": "\n\n".join(doc.page_content for doc in docs)}
+        vectorizer = TfidfVectorizer()
+        X = vectorizer.fit_transform(texts).toarray()
+        embed = lambda text: vectorizer.transform([text]).toarray()[0]
+        faiss_index = FAISS.from_embeddings(list(zip(texts, X)), embed)
 
-    async def acombine_docs(self, docs, **kwargs):
-        return {"output_text": "\n\n".join(doc.page_content for doc in docs)}
+        # Save files
+        if os.path.exists(INDEX_DIR):
+            shutil.rmtree(INDEX_DIR)
+        os.makedirs(INDEX_DIR, exist_ok=True)
+        faiss_index.save_local(INDEX_DIR)
+        joblib.dump(vectorizer, os.path.join(INDEX_DIR, "vectorizer.pkl"))
 
-    @property
-    def input_keys(self):
-        return ["documents"]
+        # Zip for download
+        with tempfile.TemporaryDirectory() as tmpdir:
+            zip_path = os.path.join(tmpdir, ZIP_OUTPUT)
+            with zipfile.ZipFile(zip_path, "w") as zipf:
+                for f in ["index.faiss", "index.pkl", "vectorizer.pkl"]:
+                    file_path = os.path.join(INDEX_DIR, f)
+                    zipf.write(file_path, arcname=f)
 
-    @property
-    def output_keys(self):
-        return ["output_text"]
-
-qa = RetrievalQAWithSourcesChain(
-    combine_documents_chain=DummyCombineDocumentsChain(),
-    retriever=retriever
-)
-
-# Chat interface
-query = st.text_input("Ask me something about the Maja Bridge System:")
-if query:
-    try:
-        result = qa.invoke({"question": query})
-        st.markdown("**Answer:**")
-        st.write(result["answer"] or "No relevant answer found.")
-        if result.get("sources"):
-            st.markdown("---")
-            st.markdown("**Sources:**")
-            st.write(result["sources"])
-    except Exception as e:
-        st.error("💥 Something went wrong:")
-        st.code(traceback.format_exc())
+            with open(zip_path, "rb") as f:
+                st.success("✅ Index built successfully!")
+                st.download_button(
+                    label="⬇️ Download FAISS Index Bundle (ZIP)",
+                    data=f,
+                    file_name=ZIP_OUTPUT,
+                    mime="application/zip"
+                )
