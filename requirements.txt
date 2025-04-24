@@ -1,7 +1,6 @@
 openai
+langchain==0.1.13
 faiss-cpu
 PyPDF2
 streamlit
 tiktoken
-langchain==0.1.13
-langchain-community==0.0.30
