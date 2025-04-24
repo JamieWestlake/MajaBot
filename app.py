@@ -26,12 +26,16 @@ class TfidfEmbedding(Embeddings):
     def __call__(self, text):
         return self.embed_query(text)
 
-# Dummy combiner with patched input handling
+# Dummy combiner with safe fallback for empty/no docs
 class DummyCombineDocumentsChain(BaseCombineDocumentsChain):
     def combine_docs(self, docs, **kwargs):
+        if not docs:
+            return {"output_text": "No relevant documents found."}
         return {"output_text": "\n\n".join(doc.page_content for doc in docs)}
 
     async def acombine_docs(self, docs, **kwargs):
+        if not docs:
+            return {"output_text": "No relevant documents found."}
         return {"output_text": "\n\n".join(doc.page_content for doc in docs)}
 
     @property
