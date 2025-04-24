@@ -27,10 +27,18 @@ class TfidfEmbedding:
     def embed_query(self, text):
         return self.vectorizer.transform([text]).toarray()[0]
 
-# ✅ Define persistent FAISS path
+# ✅ Define FAISS index path
 INDEX_PATH = "data/faiss_index"
 
-# ✅ Load the existing FAISS index
+# ✅ Debug output: see what files Streamlit can access
+st.markdown("### 🔍 Debug Info")
+st.text(f"Does 'data/faiss_index' exist? {os.path.exists('data/faiss_index')}")
+if os.path.exists("data"):
+    st.text(f"Files in /data/: {os.listdir('data')}")
+if os.path.exists("data/faiss_index"):
+    st.text(f"Files in /data/faiss_index/: {os.listdir('data/faiss_index')}")
+
+# ✅ Load the index from disk, if available
 @st.cache_resource
 def load_vector_store():
     if not os.path.exists(INDEX_PATH):
@@ -41,7 +49,7 @@ def load_vector_store():
 
 vector_store, embeddings = load_vector_store()
 
-# ✅ Chat logic
+# ✅ Set up retriever and chatbot
 retriever = vector_store.as_retriever(search_kwargs={"k": 4})
 qa = RetrievalQA.from_chain_type(llm=ChatOpenAI(), retriever=retriever)
 
