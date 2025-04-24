@@ -1,84 +1,44 @@
 import streamlit as st
 import os
+from PyPDF2 import PdfReader
+from langchain_core.documents import Document
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_community.vectorstores import FAISS
+from sklearn.feature_extraction.text import TfidfVectorizer
 import joblib
 import traceback
-from langchain_community.vectorstores import FAISS
-from langchain.chains import RetrievalQAWithSourcesChain
-from langchain.chains.combine_documents.base import BaseCombineDocumentsChain
-from sklearn.feature_extraction.text import TfidfVectorizer
-from langchain_core.embeddings import Embeddings
 
-# Basic UI setup
-st.set_page_config(page_title="Bridge Chatbot", layout="wide")
-st.title("💬 Chat with Maja Bridge System")
+st.set_page_config(page_title="Bridge Index Builder", layout="wide")
+st.title("📚 Build FAISS Index from PDF (No OpenAI)")
 
-# Custom embedding class that wraps TfidfVectorizer
-class TfidfEmbedding(Embeddings):
-    def __init__(self, vectorizer):
-        self.vectorizer = vectorizer
-
-    def embed_documents(self, texts):
-        return self.vectorizer.transform(texts).toarray()
-
-    def embed_query(self, text):
-        return self.vectorizer.transform([text]).toarray()[0]
-
-    def __call__(self, text):
-        return self.embed_query(text)
-
-# Where the saved files live
 INDEX_PATH = "data/faiss_index"
+PDF_PATH = "data/Maja Bridgesysteem.pdf"
 VECTORIZER_PATH = os.path.join(INDEX_PATH, "vectorizer.pkl")
 
-@st.cache_resource
-def load_vector_store():
-    if not os.path.exists(INDEX_PATH) or not os.path.exists(VECTORIZER_PATH):
-        return None, None
-    vectorizer = joblib.load(VECTORIZER_PATH)
-    embedding = TfidfEmbedding(vectorizer)
-    vector_store = FAISS.load_local(INDEX_PATH, embedding, allow_dangerous_deserialization=True)
-    return vector_store, embedding
-
-vector_store, embeddings = load_vector_store()
-
-if not vector_store:
-    st.error("❌ FAISS index not found. Please upload index.faiss, index.pkl, and vectorizer.pkl to data/faiss_index.")
+if not os.path.exists(PDF_PATH):
+    st.error("❌ PDF not found at `data/Maja Bridgesysteem.pdf`. Please upload it to your repo.")
     st.stop()
 
-# Use LangChain's RetrievalQA with a dummy output chain
-retriever = vector_store.as_retriever(search_kwargs={"k": 4})
+if st.button("🚀 Rebuild FAISS Index Now"):
+    with st.spinner("Processing PDF..."):
+        try:
+            reader = PdfReader(PDF_PATH)
+            docs = [Document(page_content=p.extract_text()) for p in reader.pages if p.extract_text()]
+            splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=100)
+            chunks = splitter.split_documents(docs)
+            texts = [doc.page_content for doc in chunks]
+            metadatas = [doc.metadata for doc in chunks]
 
-class DummyCombineDocumentsChain(BaseCombineDocumentsChain):
-    def combine_docs(self, docs, **kwargs):
-        return {"output_text": "\n\n".join(doc.page_content for doc in docs)}
+            vectorizer = TfidfVectorizer()
+            X = vectorizer.fit_transform(texts).toarray()
+            embed = lambda text: vectorizer.transform([text]).toarray()[0]
+            faiss_index = FAISS.from_embeddings(list(zip(texts, X)), embed)
 
-    async def acombine_docs(self, docs, **kwargs):
-        return {"output_text": "\n\n".join(doc.page_content for doc in docs)}
+            os.makedirs(INDEX_PATH, exist_ok=True)
+            faiss_index.save_local(INDEX_PATH)
+            joblib.dump(vectorizer, VECTORIZER_PATH)
 
-    @property
-    def input_keys(self):
-        return ["documents"]
-
-    @property
-    def output_keys(self):
-        return ["output_text"]
-
-qa = RetrievalQAWithSourcesChain(
-    combine_documents_chain=DummyCombineDocumentsChain(),
-    retriever=retriever
-)
-
-# Chat interface
-query = st.text_input("Ask me something about the Maja Bridge System:")
-if query:
-    try:
-        result = qa.invoke({"question": query})
-        st.markdown("**Answer:**")
-        st.write(result["answer"] or "No relevant answer found.")
-        if result.get("sources"):
-            st.markdown("---")
-            st.markdown("**Sources:**")
-            st.write(result["sources"])
-    except Exception as e:
-        st.error("💥 Something went wrong:")
-        st.code(traceback.format_exc())
+            st.success("✅ Index rebuilt successfully! Ready for chatbot.")
+        except Exception as e:
+            st.error("❌ Failed to build index.")
+            st.code(traceback.format_exc())
