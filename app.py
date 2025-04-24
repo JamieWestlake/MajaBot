@@ -14,7 +14,7 @@ import io
 st.set_page_config(page_title="Bridge Chatbot", layout="wide")
 st.title("💬 Chat with Maja Bridge System")
 
-# ✅ Free TF-IDF embedding class
+# ✅ Free TF-IDF embedding
 class TfidfEmbedding:
     def __init__(self):
         self.vectorizer = TfidfVectorizer()
@@ -31,7 +31,7 @@ class TfidfEmbedding:
 
 INDEX_PATH = "data/faiss_index"
 
-# ✅ Load PDF and chunk it
+# ✅ Load and chunk PDF
 def load_pdf(path):
     reader = PdfReader(path)
     return [Document(page_content=page.extract_text()) for page in reader.pages]
@@ -86,7 +86,7 @@ if not vector_store:
 else:
     retriever = vector_store.as_retriever(search_kwargs={"k": 4})
 
-    # ✅ Correct dummy document combiner
+    # ✅ Minimal dummy chain to bypass LLM
     class DummyCombineDocumentsChain(BaseCombineDocumentsChain):
         def combine_docs(self, docs, **kwargs):
             return {"output_text": "\n\n".join(doc.page_content for doc in docs)}
@@ -109,6 +109,11 @@ else:
 
     query = st.text_input("Ask me something about the Maja Bridge System:")
     if query:
-        result = qa.run({"question": query})
-        st.markdown("**Top Matching Answer:**")
-        st.write(result["answer"] if result["answer"] else "No relevant answer found.")
+        result = qa.invoke({"question": query})
+        st.markdown("**Answer:**")
+        st.write(result["answer"] or "No relevant answer found.")
+
+        if result.get("sources"):
+            st.markdown("---")
+            st.markdown("**Sources:**")
+            st.write(result["sources"])
