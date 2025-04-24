@@ -3,16 +3,15 @@ import os
 import joblib
 import traceback
 from langchain_community.vectorstores import FAISS
-from langchain.chains import RetrievalQAWithSourcesChain
-from langchain.chains.combine_documents.base import BaseCombineDocumentsChain
 from langchain_core.embeddings import Embeddings
+from langchain.chains.combine_documents.base import BaseCombineDocumentsChain
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 # UI setup
 st.set_page_config(page_title="Bridge Chatbot", layout="wide")
 st.title("💬 Chat with Maja Bridge System")
 
-# TF-IDF embedding class
+# Embedding class using TF-IDF vectorizer
 class TfidfEmbedding(Embeddings):
     def __init__(self, vectorizer):
         self.vectorizer = vectorizer
@@ -26,7 +25,7 @@ class TfidfEmbedding(Embeddings):
     def __call__(self, text):
         return self.embed_query(text)
 
-# Combiner with safe fallback
+# Simple combiner that joins chunks
 class DummyCombineDocumentsChain(BaseCombineDocumentsChain):
     def combine_docs(self, docs, **kwargs):
         if not docs:
@@ -50,11 +49,11 @@ class DummyCombineDocumentsChain(BaseCombineDocumentsChain):
         documents = inputs.get("documents")
         return self.combine_docs(documents, **kwargs)
 
-# Paths
+# File paths
 INDEX_PATH = "data/faiss_index"
 VECTORIZER_PATH = os.path.join(INDEX_PATH, "vectorizer.pkl")
 
-# Load FAISS vector store
+# Load the FAISS vector store and TF-IDF vectorizer
 @st.cache_resource
 def load_vector_store():
     if not os.path.exists(INDEX_PATH) or not os.path.exists(VECTORIZER_PATH):
@@ -67,43 +66,43 @@ def load_vector_store():
 vector_store, embeddings = load_vector_store()
 
 if not vector_store:
-    st.error("❌ FAISS index not found. Please upload all 3 files to `data/faiss_index/`.")
+    st.error("❌ FAISS index not found. Please upload `index.faiss`, `index.pkl`, and `vectorizer.pkl` to `data/faiss_index/`.")
     st.stop()
 
 retriever = vector_store.as_retriever(search_kwargs={"k": 4})
-qa = RetrievalQAWithSourcesChain(
-    combine_documents_chain=DummyCombineDocumentsChain(),
-    retriever=retriever
-)
+combiner = DummyCombineDocumentsChain()
 
 # Chat UI
 query = st.text_input("Ask me something about the Maja Bridge System:")
 if query:
     try:
-        result = qa.invoke({"question": query})
+        docs = retriever.get_relevant_documents(query)
+        result = combiner(inputs={"documents": docs})
+
         st.markdown("**Answer:**")
-        st.write(result["answer"] or "No relevant answer found.")
-        if result.get("sources"):
+        st.write(result["output_text"])
+
+        # Show retrieved context (optional)
+        if docs:
             st.markdown("---")
-            st.markdown("**Sources:**")
-            st.write(result["sources"])
+            st.markdown("**Matched Snippets:**")
+            for i, doc in enumerate(docs):
+                st.markdown(f"**Match {i+1}:**")
+                st.write(doc.page_content[:300])
+
     except Exception as e:
-        st.error("💥 Something went wrong:")
+        st.error("💥 Something went wrong while answering your question:")
         st.code(traceback.format_exc())
 
-# 🔍 Test the raw index (debug helper)
-with st.expander("🧪 Debug: Test FAISS index directly"):
+# Optional: Debug section to test search without UI
+with st.expander("🧪 Debug: Test FAISS index"):
     if st.button("Run test query"):
-        test_query = "opening bid with 5-card major"
         try:
-            docs = vector_store.similarity_search(test_query, k=3)
+            docs = vector_store.similarity_search("opening bid with 5-card major", k=3)
             st.markdown("**Top Matches:**")
-            if docs:
-                for i, doc in enumerate(docs):
-                    st.markdown(f"**Match {i+1}:**")
-                    st.write(doc.page_content[:300])
-            else:
-                st.warning("⚠️ No matches found for this query.")
+            for i, doc in enumerate(docs):
+                st.markdown(f"**Match {i+1}:**")
+                st.write(doc.page_content[:300])
         except Exception as e:
-            st.error("❌ FAISS query failed.")
+            st.error("❌ Test query failed.")
             st.code(traceback.format_exc())
