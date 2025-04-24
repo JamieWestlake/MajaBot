@@ -1,12 +1,11 @@
 import streamlit as st
 import os
 from PyPDF2 import PdfReader
-from langchain.vectorstores import FAISS
+from langchain_community.vectorstores import FAISS
 from langchain.docstore.document import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.chains import RetrievalQAWithSourcesChain
-from langchain.prompts import PromptTemplate
-from langchain.chains.qa_with_sources.base import BaseCombineDocumentsChain
+from langchain.chains.combine_documents.base import BaseCombineDocumentsChain
 from sklearn.feature_extraction.text import TfidfVectorizer
 import numpy as np
 import zipfile
@@ -15,7 +14,7 @@ import io
 st.set_page_config(page_title="Bridge Chatbot", layout="wide")
 st.title("💬 Chat with Maja Bridge System")
 
-# ✅ Free local embedding model
+# ✅ Free TF-IDF embedding class
 class TfidfEmbedding:
     def __init__(self):
         self.vectorizer = TfidfVectorizer()
@@ -32,25 +31,22 @@ class TfidfEmbedding:
 
 INDEX_PATH = "data/faiss_index"
 
-# ✅ Load PDF and split
+# ✅ Load PDF and chunk it
 def load_pdf(path):
     reader = PdfReader(path)
     return [Document(page_content=page.extract_text()) for page in reader.pages]
 
-# ✅ Build FAISS index
 def build_index():
     docs = load_pdf("data/Maja Bridgesysteem.pdf")
     splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=100)
     chunks = splitter.split_documents(docs)
     texts = [doc.page_content for doc in chunks]
     metadatas = [doc.metadata for doc in chunks]
-
     embeddings = TfidfEmbedding()
     faiss_index = FAISS.from_texts(texts, embeddings, metadatas=metadatas)
     faiss_index.save_local(INDEX_PATH)
     return faiss_index, embeddings
 
-# ✅ Load or fallback to rebuild
 @st.cache_resource
 def load_vector_store():
     if not os.path.exists(INDEX_PATH):
@@ -63,11 +59,10 @@ vector_store, embeddings = load_vector_store()
 if not vector_store:
     st.warning("⚠️ FAISS index not found. Click below to build it.")
     if st.button("🚀 Build FAISS Index"):
-        with st.spinner("Building FAISS index with TF-IDF..."):
+        with st.spinner("Building FAISS index..."):
             vector_store, embeddings = build_index()
         st.success("✅ Index built! Download it and upload to GitHub to make it permanent.")
 
-        # Download button
         def zip_faiss_index(folder_path):
             zip_buffer = io.BytesIO()
             with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
@@ -90,11 +85,14 @@ if not vector_store:
 
 else:
     retriever = vector_store.as_retriever(search_kwargs={"k": 4})
-    
-    # Dummy combine chain so we can use the RetrievalQAWithSourcesChain wrapper
+
+    # ✅ Correct dummy document combiner
     class DummyCombineDocumentsChain(BaseCombineDocumentsChain):
-        def _call(self, inputs, run_manager=None):
-            return {"output_text": "\n\n".join(doc.page_content for doc in inputs["documents"])}
+        def combine_docs(self, docs, **kwargs):
+            return {"output_text": "\n\n".join(doc.page_content for doc in docs)}
+
+        async def acombine_docs(self, docs, **kwargs):
+            return {"output_text": "\n\n".join(doc.page_content for doc in docs)}
 
         @property
         def input_keys(self):
@@ -104,7 +102,10 @@ else:
         def output_keys(self):
             return ["output_text"]
 
-    qa = RetrievalQAWithSourcesChain(combine_documents_chain=DummyCombineDocumentsChain(), retriever=retriever)
+    qa = RetrievalQAWithSourcesChain(
+        combine_documents_chain=DummyCombineDocumentsChain(),
+        retriever=retriever
+    )
 
     query = st.text_input("Ask me something about the Maja Bridge System:")
     if query:
