@@ -6,13 +6,14 @@ from langchain_community.vectorstores import FAISS
 from langchain.chains import RetrievalQAWithSourcesChain
 from langchain.chains.combine_documents.base import BaseCombineDocumentsChain
 from sklearn.feature_extraction.text import TfidfVectorizer
+from langchain_core.embeddings import Embeddings
 
 # Basic UI setup
 st.set_page_config(page_title="Bridge Chatbot", layout="wide")
 st.title("💬 Chat with Maja Bridge System")
 
 # Custom embedding class that wraps TfidfVectorizer
-class TfidfEmbedding:
+class TfidfEmbedding(Embeddings):
     def __init__(self, vectorizer):
         self.vectorizer = vectorizer
 
