@@ -10,6 +10,8 @@ from langchain.chat_models import ChatOpenAI
 from langchain.embeddings import HuggingFaceEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 
+os.environ["STREAMLIT_ENV"] = "production"
+
 # 🔧 Fix PyTorch async loop error on reload
 asyncio.set_event_loop(asyncio.new_event_loop())
 
