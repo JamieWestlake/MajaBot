@@ -50,6 +50,7 @@ if not vector_store:
         with st.spinner("Building index from PDF using local model..."):
             vector_store = build_index()
         st.success("Index built! Please reload the app.")
+        st.experimental_rerun()
         st.stop()
 else:
     retriever = vector_store.as_retriever(search_kwargs={"k": 4})
