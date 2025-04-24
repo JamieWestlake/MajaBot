@@ -12,6 +12,9 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 st.set_page_config(page_title="Bridge Chatbot", layout="wide")
 st.title("💬 Chat with Maja Bridge System")
 
+# ✅ Define path to persist FAISS index
+INDEX_PATH = "data/faiss_index"
+
 # ✅ Load PDF and convert to LangChain Documents
 def load_pdf(path):
     reader = PdfReader(path)
@@ -28,16 +31,16 @@ def build_index():
     metadatas = [doc.metadata for doc in chunks]
 
     vectorstore = FAISS.from_texts(texts, embeddings, metadatas=metadatas)
-    vectorstore.save_local("faiss_index")
+    vectorstore.save_local(INDEX_PATH)
     return vectorstore
 
 # ✅ Load or fallback to index build prompt
 @st.cache_resource
 def load_vector_store():
-    if not os.path.exists("faiss_index"):
+    if not os.path.exists(INDEX_PATH):
         return None
     embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-    return FAISS.load_local("faiss_index", embeddings)
+    return FAISS.load_local(INDEX_PATH, embeddings)
 
 vector_store = load_vector_store()
 
