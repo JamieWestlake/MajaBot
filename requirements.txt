@@ -1,6 +1,7 @@
-openai
+streamlit
 langchain==0.1.13
 faiss-cpu
 PyPDF2
-streamlit
 tiktoken
+sentence-transformers
+openai
