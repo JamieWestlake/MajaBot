@@ -55,7 +55,10 @@ def load_vector_store():
     if not os.path.exists(INDEX_PATH):
         return None, None
     embeddings = TfidfEmbedding()
+    # 🔧 Force fit on dummy content to ensure it's ready
+    embeddings.embed_documents(["dummy to initialize vectorizer"])
     return FAISS.load_local(INDEX_PATH, embeddings, allow_dangerous_deserialization=True), embeddings
+
 
 vector_store, embeddings = load_vector_store()
 
