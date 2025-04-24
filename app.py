@@ -1,6 +1,7 @@
 import streamlit as st
 import os
 import time
+import asyncio
 from PyPDF2 import PdfReader
 from langchain.docstore.document import Document
 from langchain.vectorstores import FAISS
@@ -8,6 +9,9 @@ from langchain.chains import RetrievalQA
 from langchain.chat_models import ChatOpenAI
 from langchain.embeddings import HuggingFaceEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
+
+# 🔧 Fix PyTorch async loop error on reload
+asyncio.set_event_loop(asyncio.new_event_loop())
 
 st.set_page_config(page_title="Bridge Chatbot", layout="wide")
 st.title("💬 Chat with Maja Bridge System")
@@ -30,6 +34,7 @@ def build_index():
     docs = load_pdf("data/Maja Bridgesysteem.pdf")
     splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=100)
     chunks = splitter.split_documents(docs)
+
     embeddings = HuggingFaceEmbeddings(
         model_name="sentence-transformers/all-MiniLM-L6-v2",
         model_kwargs={"device": "cpu"}
@@ -42,16 +47,18 @@ def build_index():
     vectorstore.save_local(INDEX_PATH)
     return vectorstore
 
-# ✅ Load or fallback to index build prompt
+# ✅ Load or fallback to index build prompt (model loaded inside call)
 @st.cache_resource
 def load_vector_store():
     if not os.path.exists(INDEX_PATH):
         return None
-    embeddings = HuggingFaceEmbeddings(
-        model_name="sentence-transformers/all-MiniLM-L6-v2",
-        model_kwargs={"device": "cpu"}
+    return FAISS.load_local(
+        INDEX_PATH,
+        HuggingFaceEmbeddings(
+            model_name="sentence-transformers/all-MiniLM-L6-v2",
+            model_kwargs={"device": "cpu"}
+        )
     )
-    return FAISS.load_local(INDEX_PATH, embeddings)
 
 vector_store = load_vector_store()
 
