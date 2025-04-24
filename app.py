@@ -2,34 +2,35 @@ import streamlit as st
 import os
 import time
 from PyPDF2 import PdfReader
-from langchain.docstore.document import Document
 from langchain.vectorstores import FAISS
+from langchain.docstore.document import Document
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.chains import RetrievalQA
 from langchain.chat_models import ChatOpenAI
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from sentence_transformers import SentenceTransformer
-
-# ✅ Custom local embedding wrapper (avoids HuggingFaceEmbedding crash)
-class LocalEmbedding:
-    def __init__(self, model_name="sentence-transformers/all-MiniLM-L6-v2"):
-        self.model = SentenceTransformer(model_name)
-
-    def embed_documents(self, texts):
-        return self.model.encode(texts, show_progress_bar=True).tolist()
-
-    def embed_query(self, text):
-        return self.model.encode(text, show_progress_bar=False).tolist()
+from sklearn.feature_extraction.text import TfidfVectorizer
+import numpy as np
 
 st.set_page_config(page_title="Bridge Chatbot", layout="wide")
 st.title("💬 Chat with Maja Bridge System")
 
-# 🔁 Rerun after FAISS build
-if st.session_state.get("index_built"):
-    st.session_state.index_built = False
-    st.experimental_rerun()
+# TF-IDF wrapper for LangChain
+class TfidfEmbedding:
+    def __init__(self):
+        self.vectorizer = TfidfVectorizer()
+        self.fitted = False
+
+    def embed_documents(self, texts):
+        if not self.fitted:
+            self.vectorizer.fit(texts)
+            self.fitted = True
+        return self.vectorizer.transform(texts).toarray()
+
+    def embed_query(self, text):
+        return self.vectorizer.transform([text]).toarray()[0]
 
 INDEX_PATH = "data/faiss_index"
 
+# Load and chunk PDF
 def load_pdf(path):
     reader = PdfReader(path)
     return [Document(page_content=page.extract_text()) for page in reader.pages]
@@ -39,29 +40,31 @@ def build_index():
     splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=100)
     chunks = splitter.split_documents(docs)
 
-    embeddings = LocalEmbedding()
     texts = [doc.page_content for doc in chunks]
     metadatas = [doc.metadata for doc in chunks]
+    embeddings = TfidfEmbedding()
 
-    vectorstore = FAISS.from_texts(texts, embeddings, metadatas=metadatas)
-    vectorstore.save_local(INDEX_PATH)
-    return vectorstore
+    embedded = embeddings.embed_documents(texts)
+    faiss_index = FAISS.from_embeddings(embedded.tolist(), texts, metadatas)
+    faiss_index.save_local(INDEX_PATH)
+    return faiss_index, embeddings
 
 @st.cache_resource
 def load_vector_store():
     if not os.path.exists(INDEX_PATH):
-        return None
-    return FAISS.load_local(INDEX_PATH, LocalEmbedding())
+        return None, None
+    embeddings = TfidfEmbedding()
+    return FAISS.load_local(INDEX_PATH, embeddings), embeddings
 
-vector_store = load_vector_store()
+# Main app logic
+vector_store, embeddings = load_vector_store()
 
 if not vector_store:
-    st.warning("⚠️ FAISS index not found. Click the button below to build it.")
+    st.warning("⚠️ FAISS index not found. Click below to build it.")
     if st.button("🚀 Build FAISS Index"):
-        with st.spinner("Building index from PDF using local model..."):
-            vector_store = build_index()
-        st.success("Index built! Reloading now...")
-        st.session_state.index_built = True
+        with st.spinner("Processing PDF and building index..."):
+            vector_store, embeddings = build_index()
+        st.success("Index built! Please refresh the app.")
         st.stop()
 else:
     retriever = vector_store.as_retriever(search_kwargs={"k": 4})
