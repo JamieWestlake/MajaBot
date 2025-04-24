@@ -10,6 +10,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 import numpy as np
 import zipfile
 import io
+import traceback
 
 st.set_page_config(page_title="Bridge Chatbot", layout="wide")
 st.title("💬 Chat with Maja Bridge System")
@@ -55,7 +56,7 @@ def load_vector_store():
     if not os.path.exists(INDEX_PATH):
         return None, None
     embeddings = TfidfEmbedding()
-    # 👇 Dummy multi-string init to match FAISS index dimensionality
+    # Dummy fitting for shape alignment
     embeddings.embed_documents([
         "dummy one", "dummy two", "dummy three", "dummy four", "dummy five"
     ])
@@ -119,10 +120,10 @@ else:
             result = qa.invoke({"question": query})
             st.markdown("**Answer:**")
             st.write(result["answer"] or "No relevant answer found.")
-
             if result.get("sources"):
                 st.markdown("---")
                 st.markdown("**Sources:**")
                 st.write(result["sources"])
         except Exception as e:
-            st.error(f"💥 An error occurred: {e}")
+            st.error("💥 An error occurred:")
+            st.code(traceback.format_exc())
